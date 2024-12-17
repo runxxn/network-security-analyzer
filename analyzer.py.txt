@@ -1,0 +1,64 @@
+from scapy.all import sniff, IP, TCP, ARP
+from collections import defaultdict
+import time
+
+# Simple banner
+print("=== Network Security Analyzer ===")
+print("Monitoring live network traffic... Press CTRL+C to stop.\n")
+
+# Data storage
+packet_count = defaultdict(int)
+suspicious_activity = []
+
+# Function to detect potential port scans
+def detect_port_scan(packet):
+    if IP in packet and TCP in packet:
+        src_ip = packet[IP].src
+        dst_port = packet[TCP].dport
+        packet_count[(src_ip, dst_port)] += 1
+
+        # Trigger alert if the same IP hits multiple ports quickly
+        if packet_count[(src_ip, dst_port)] > 10:
+            alert = f"[!] Potential Port Scan Detected: {src_ip} -> Port {dst_port}"
+            if alert not in suspicious_activity:
+                suspicious_activity.append(alert)
+                print(alert)
+
+# Function to detect ARP spoofing
+def detect_arp_spoof(packet):
+    if ARP in packet and packet[ARP].op == 2:  # ARP reply
+        src_ip = packet[ARP].psrc
+        mac = packet[ARP].hwsrc
+        if src_ip in arp_table and arp_table[src_ip] != mac:
+            alert = f"[!] ARP Spoofing Detected: {src_ip} is using MAC {mac}"
+            if alert not in suspicious_activity:
+                suspicious_activity.append(alert)
+                print(alert)
+        arp_table[src_ip] = mac
+
+# ARP Table for spoofing detection
+arp_table = {}
+
+# Packet handler
+def process_packet(packet):
+    # Detect ARP spoofing
+    if ARP in packet:
+        detect_arp_spoof(packet)
+    
+    # Detect Port Scans
+    if TCP in packet:
+        detect_port_scan(packet)
+
+    # General packet log
+    if IP in packet:
+        print(f"[+] Packet: {packet[IP].src} -> {packet[IP].dst}")
+
+# Start sniffing packets
+try:
+    sniff(prn=process_packet, store=0)
+except KeyboardInterrupt:
+    print("\n=== Monitoring Stopped ===")
+    print("Summary of Suspicious Activity:")
+    for activity in suspicious_activity:
+        print(activity)
+    print("Goodbye!")
